@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=grid_new_ratios
 #SBATCH --partition=all
-#SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=24G
-#SBATCH --time=16:00:00
+#SBATCH --gres=gpu:4
+#SBATCH --cpus-per-task=56
+#SBATCH --mem=256G
+#SBATCH --time=24:00:00
 #SBATCH --output=logs/grid_new_ratios_%j.log
 #SBATCH --error=logs/grid_new_ratios_%j.err
 
@@ -23,7 +23,7 @@ SEQUENCES["toytrain"]="104_12352_22039"
 MASK_RATIOS=(0.20 0.30 0.40)
 MASK_TAGS=(mask_20pct mask_30pct mask_40pct)
 N_FRAMES_LIST=(2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
-N_GPUS=2
+N_GPUS=4
 SEQ_BASE="/mnt/weka/hminasyan/data/co3d"
 OUTPUT_ROOT="/mnt/weka/hminasyan/outputs/dust3r/grid_mask_exp"
 GRID_MASKED_ROOT="/mnt/weka/hminasyan/outputs/grid_masked"
