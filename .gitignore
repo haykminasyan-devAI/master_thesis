@@ -1,0 +1,28 @@
+# Large data - never push
+data/
+co3d_data.tar.gz
+grid_masked.tar.gz
+
+# Generated outputs with images - large
+outputs/grid_masked/
+outputs/masked_frames/
+outputs/degraded_frames/
+outputs/demo/
+outputs/colmap/
+outputs/exp1images/
+
+# Python junk
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Temp/editor files
+scripts/Untitled
+*.tmp
+.DS_Store
