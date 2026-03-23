@@ -24,12 +24,13 @@ MASK_RATIOS=(0.20 0.30 0.40)
 MASK_TAGS=(mask_20pct mask_30pct mask_40pct)
 N_FRAMES_LIST=(2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
 N_GPUS=2
-SEQ_BASE="data/co3d"
-OUTPUT_ROOT="outputs/dust3r/grid_mask_exp"
+SEQ_BASE="/mnt/weka/hminasyan/data/co3d"
+OUTPUT_ROOT="/mnt/weka/hminasyan/outputs/dust3r/grid_mask_exp"
+GRID_MASKED_ROOT="/mnt/weka/hminasyan/outputs/grid_masked"
+PROJECT_DIR="/home/hminasyan/project_Hayk_Minasyan"
 
-source /home/asds/miniforge3/etc/profile.d/conda.sh
-conda activate co3d_env
-cd /home/asds/project_Hayk_Minasyan
+source /mnt/weka/hminasyan/co3d_env/bin/activate
+cd $PROJECT_DIR
 
 echo "================================================================"
 echo "Started  : $(date)"
@@ -50,7 +51,7 @@ for i in "${!MASK_RATIOS[@]}"; do
     TAG="${MASK_TAGS[$i]}"
     for CATEGORY in "${!SEQUENCES[@]}"; do
         SEQ_ID="${SEQUENCES[$CATEGORY]}"
-        OUT_DIR="outputs/grid_masked/${CATEGORY}/${SEQ_ID}/${TAG}"
+        OUT_DIR="${GRID_MASKED_ROOT}/${CATEGORY}/${SEQ_ID}/${TAG}"
         if [ -d "$OUT_DIR" ] && [ "$(ls -A "$OUT_DIR" 2>/dev/null | wc -l)" -gt 0 ]; then
             echo "  [skip] ${CATEGORY} ${TAG}"
         else
@@ -77,7 +78,7 @@ for N in "${N_FRAMES_LIST[@]}"; do
         SEQ_DIR="${SEQ_BASE}/${CATEGORY}/${SEQ_ID}"
         for i in "${!MASK_TAGS[@]}"; do
             TAG="${MASK_TAGS[$i]}"
-            MASKED_DIR="outputs/grid_masked/${CATEGORY}/${SEQ_ID}/${TAG}"
+            MASKED_DIR="${GRID_MASKED_ROOT}/${CATEGORY}/${SEQ_ID}/${TAG}"
             OUT="${OUTPUT_ROOT}/${TAG}/${CATEGORY}_${SEQ_ID}/frames_$(printf '%02d' $N)"
             if [ ! -f "${OUT}/metrics.txt" ]; then
                 WORK_QUEUE+=("${N}|${SEQ_DIR}|${MASKED_DIR}|${OUT}")
