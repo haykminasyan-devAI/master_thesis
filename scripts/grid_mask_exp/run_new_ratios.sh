@@ -29,7 +29,7 @@ OUTPUT_ROOT="/mnt/weka/hminasyan/outputs/dust3r/grid_mask_exp"
 GRID_MASKED_ROOT="/mnt/weka/hminasyan/outputs/grid_masked"
 PROJECT_DIR="/home/hminasyan/project_Hayk_Minasyan"
 
-export PATH="/mnt/weka/shared-cache/miniforge3/bin:$PATH"
+PYTHON="/mnt/weka/hminasyan/co3d_env/bin/python3"
 cd $PROJECT_DIR
 
 echo "================================================================"
@@ -56,7 +56,7 @@ for i in "${!MASK_RATIOS[@]}"; do
             echo "  [skip] ${CATEGORY} ${TAG}"
         else
             echo "  [gen]  ${CATEGORY} ${TAG} ..."
-            /mnt/weka/shared-cache/miniforge3/bin/python3 scripts/masking_exp/grid_mask.py \
+            $PYTHON scripts/masking_exp/grid_mask.py \
                 --images_dir "${SEQ_BASE}/${CATEGORY}/${SEQ_ID}/images" \
                 --output_dir "$OUT_DIR" \
                 --patch_size 16 \
@@ -124,7 +124,7 @@ while [ $JOB_IDX -lt $TOTAL_JOBS ] || [ $COMPLETED -lt $TOTAL_JOBS ]; do
 
             PYTORCH_ALLOC_CONF=expandable_segments:True \
             CUDA_VISIBLE_DEVICES=$g \
-            /mnt/weka/shared-cache/miniforge3/bin/python3 scripts/run_dust3r_inference.py \
+            $PYTHON scripts/run_dust3r_inference.py \
                 --sequence_dir "$SEQ_DIR" \
                 --dust3r_dir   "dust3r" \
                 --n_frames     "$N" \
@@ -149,7 +149,7 @@ echo "  All ${COMPLETED} inference runs complete."
 # ── Step 4: Plot (all 5 ratios together) ──────────────────────────────────────
 echo ""
 echo ">>> Step 4: Generating updated plot ..."
-/mnt/weka/shared-cache/miniforge3/bin/python3 scripts/grid_mask_exp/plot_grid_mask_exp.py \
+$PYTHON scripts/grid_mask_exp/plot_grid_mask_exp.py \
     --results_root "$OUTPUT_ROOT" \
     --n_min 2 --n_max 20
 
