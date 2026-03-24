@@ -35,16 +35,12 @@ def setup_dust3r_path(dust3r_dir: str):
     sys.path.insert(0, os.path.join(croco_dir, "models"))
 
 # ── frame selection ────────────────────────────────────────────────────────────
-def select_frames(images_dir: str, n_frames: int, frame_pool_pct: float = 100.0) -> list[str]:
-    """Return n_frames evenly-spaced frame filenames from the first frame_pool_pct% of the sequence."""
+def select_frames(images_dir: str, n_frames: int) -> list[str]:
+    """Return n_frames evenly-spaced frame filenames (just basenames, sorted)."""
     all_frames = sorted([
         f for f in os.listdir(images_dir)
         if f.endswith(".jpg") or f.endswith(".png")
     ])
-    # limit pool to the first frame_pool_pct% of frames
-    if frame_pool_pct < 100.0:
-        pool_end = max(2, int(len(all_frames) * frame_pool_pct / 100.0))
-        all_frames = all_frames[:pool_end]
     if len(all_frames) <= n_frames:
         return all_frames
     indices = np.linspace(0, len(all_frames) - 1, n_frames, dtype=int)
@@ -52,8 +48,7 @@ def select_frames(images_dir: str, n_frames: int, frame_pool_pct: float = 100.0)
 
 
 def build_frame_list(images_dir: str, n_frames: int,
-                     n_masked: int = 0, masked_dir: str = None,
-                     frame_pool_pct: float = 100.0) -> list[str]:
+                     n_masked: int = 0, masked_dir: str = None) -> list[str]:
     """
     Build a mixed list of clean and masked frame paths.
 
@@ -67,7 +62,7 @@ def build_frame_list(images_dir: str, n_frames: int,
         n_masked   : how many of those frames to replace with masked versions
         masked_dir : folder containing the masked frames (same filenames)
     """
-    frame_names = select_frames(images_dir, n_frames, frame_pool_pct)
+    frame_names = select_frames(images_dir, n_frames)
 
     if n_masked == 0 or masked_dir is None:
         return [os.path.join(images_dir, f) for f in frame_names]
@@ -218,10 +213,6 @@ def main():
                              "Required when --n_masked > 0")
     parser.add_argument("--mask_ratio", type=float, default=0.25,
                         help="Mask ratio used when generating masked frames (for logging, default: 0.25)")
-    parser.add_argument("--frame_pool_pct", type=float, default=100.0,
-                        help="Use only the first X%% of frames as the pool (e.g. 50 = first half = 0-180deg)")
-    parser.add_argument("--chamfer_only", action="store_true",
-                        help="Only compute and save Chamfer Distance (skip hausdorff, F1, PSNR)")
     # ── model parameters ──────────────────────────────────────────────────────
     parser.add_argument("--min_conf_thr", type=float, default=3.0,
                         help="Confidence threshold for point filtering (default: 3.0)")
@@ -250,8 +241,7 @@ def main():
     # ── select frames ──────────────────────────────────────────────────────────
     images_dir  = os.path.join(args.sequence_dir, "images")
     frame_paths = build_frame_list(images_dir, args.n_frames,
-                                   args.n_masked, args.masked_dir,
-                                   args.frame_pool_pct)
+                                   args.n_masked, args.masked_dir)
 
     print(f"\nUsing {len(frame_paths)} frames  "
           f"(masked: {args.n_masked}, clean: {len(frame_paths)-args.n_masked})")
@@ -316,15 +306,14 @@ def main():
     print(f"  Chamfer Distance (CD):       {metrics['chamfer_distance']:.6f}")
     print(f"  CD pred→GT:                  {metrics['cd_pred_to_gt']:.6f}")
     print(f"  CD GT→pred:                  {metrics['cd_gt_to_pred']:.6f}")
-    if not args.chamfer_only:
-        print(f"  Hausdorff Distance:          {metrics['hausdorff']:.6f}")
-        print(f"  Hausdorff pred→GT:           {metrics['hausdorff_p2g']:.6f}")
-        print(f"  Hausdorff GT→pred:           {metrics['hausdorff_g2p']:.6f}")
-        print(f"  F1 Score (thr={metrics['f1_threshold']:.4f}):    {metrics['f1']:.6f}")
-        print(f"  Precision:                   {metrics['precision']:.6f}")
-        print(f"  Recall:                      {metrics['recall']:.6f}")
-        print(f"  PSNR d1:                     {metrics['psnr_d1']:.4f} dB")
-        print(f"  BBox diagonal (GT):          {metrics['bbox_diag']:.6f}")
+    print(f"  Hausdorff Distance:          {metrics['hausdorff']:.6f}")
+    print(f"  Hausdorff pred→GT:           {metrics['hausdorff_p2g']:.6f}")
+    print(f"  Hausdorff GT→pred:           {metrics['hausdorff_g2p']:.6f}")
+    print(f"  F1 Score (thr={metrics['f1_threshold']:.4f}):    {metrics['f1']:.6f}")
+    print(f"  Precision:                   {metrics['precision']:.6f}")
+    print(f"  Recall:                      {metrics['recall']:.6f}")
+    print(f"  PSNR d1:                     {metrics['psnr_d1']:.4f} dB")
+    print(f"  BBox diagonal (GT):          {metrics['bbox_diag']:.6f}")
     print(f"  Predicted points:            {metrics['n_pred_points']:,}")
     print(f"  GT points:                   {metrics['n_gt_points']:,}")
     print("="*55)
@@ -342,16 +331,15 @@ def main():
         f.write(f"chamfer_distance:  {metrics['chamfer_distance']:.8f}\n")
         f.write(f"cd_pred_to_gt:     {metrics['cd_pred_to_gt']:.8f}\n")
         f.write(f"cd_gt_to_pred:     {metrics['cd_gt_to_pred']:.8f}\n")
-        if not args.chamfer_only:
-            f.write(f"hausdorff:         {metrics['hausdorff']:.8f}\n")
-            f.write(f"hausdorff_p2g:     {metrics['hausdorff_p2g']:.8f}\n")
-            f.write(f"hausdorff_g2p:     {metrics['hausdorff_g2p']:.8f}\n")
-            f.write(f"f1:                {metrics['f1']:.8f}\n")
-            f.write(f"precision:         {metrics['precision']:.8f}\n")
-            f.write(f"recall:            {metrics['recall']:.8f}\n")
-            f.write(f"f1_threshold:      {metrics['f1_threshold']:.8f}\n")
-            f.write(f"psnr_d1:           {metrics['psnr_d1']:.6f}\n")
-            f.write(f"bbox_diag:         {metrics['bbox_diag']:.8f}\n")
+        f.write(f"hausdorff:         {metrics['hausdorff']:.8f}\n")
+        f.write(f"hausdorff_p2g:     {metrics['hausdorff_p2g']:.8f}\n")
+        f.write(f"hausdorff_g2p:     {metrics['hausdorff_g2p']:.8f}\n")
+        f.write(f"f1:                {metrics['f1']:.8f}\n")
+        f.write(f"precision:         {metrics['precision']:.8f}\n")
+        f.write(f"recall:            {metrics['recall']:.8f}\n")
+        f.write(f"f1_threshold:      {metrics['f1_threshold']:.8f}\n")
+        f.write(f"psnr_d1:           {metrics['psnr_d1']:.6f}\n")
+        f.write(f"bbox_diag:         {metrics['bbox_diag']:.8f}\n")
     print(f"\nMetrics saved to: {metrics_path}")
 
 

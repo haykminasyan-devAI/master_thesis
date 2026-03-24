@@ -106,13 +106,12 @@ while [ $JOB_IDX -lt $TOTAL_JOBS ] || [ $COMPLETED -lt $TOTAL_JOBS ]; do
 
             PYTORCH_ALLOC_CONF=expandable_segments:True \
             CUDA_VISIBLE_DEVICES=$g \
-            $PYTHON scripts/run_dust3r_inference.py \
+            $PYTHON outputs/dust3r/angle_range_exp/inference.py \
                 --sequence_dir    "$SEQ_DIR" \
                 --dust3r_dir      "dust3r" \
                 --n_frames        "$N" \
                 --frame_pool_pct  "$PCT" \
                 --output_dir      "$OUT_SUBDIR" \
-                --chamfer_only \
                 > "${OUT_SUBDIR}/inference.log" 2>&1 &
 
             GPU_PID[$g]=$!
