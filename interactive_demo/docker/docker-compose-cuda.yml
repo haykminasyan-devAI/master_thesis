@@ -1,0 +1,38 @@
+services:
+  dust3r-finetuned-demo:
+    build:
+      context: ./files
+      dockerfile: cuda.Dockerfile
+    image: dust3r-finetuned-demo:cuda
+    container_name: dust3r-finetuned-demo
+    ports:
+      - "${HOST_PORT:-7860}:7860"
+    environment:
+      - DEVICE=cuda
+      - PROJECT_ROOT=/workspace/project_Hayk_Minasyan
+      - DUST3R_CKPT=${DUST3R_CKPT_IN_CONTAINER:-/workspace/checkpoints/DUSt3R_ViTLarge_BaseDecoder_224_linear.pth}
+      - KD_RESTORMER_STUDENT_CKPT=${KD_RESTORMER_STUDENT_CKPT_IN_CONTAINER:-/workspace/checkpoints/kd_restormer_student_best.pth}
+      - KD20_CKPT=${KD20_CKPT_IN_CONTAINER:-}
+      - KD50_CKPT=${KD50_CKPT_IN_CONTAINER:-}
+      # Legacy alias still read by entrypoint if KD_RESTORMER_STUDENT_CKPT is unset:
+      - FT_5_10_20_30=${FT_4_IN_CONTAINER:-}
+      - IMAGE_SIZE=${IMAGE_SIZE:-224}
+      - SERVER_PORT=7860
+    volumes:
+      # Project source (this repo) — read-only is fine but we leave rw so RoPE kernels can be built.
+      - ${PROJECT_DIR}:/workspace/project_Hayk_Minasyan
+      # Checkpoints: DUSt3R base, KD Restormer student, optional KD encoder LoRA.
+      - ${CHECKPOINTS_DIR}:/workspace/checkpoints:ro
+      # Persist HF cache so models are not re-downloaded on every run.
+      - ${HF_CACHE_DIR:-./.hf_cache}:/root/.cache/huggingface
+    cap_add:
+      - IPC_LOCK
+      - SYS_RESOURCE
+    shm_size: "8gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

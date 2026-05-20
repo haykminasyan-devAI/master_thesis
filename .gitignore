@@ -1,28 +1,70 @@
-# Large data - never push
+# =============================================================================
+# Data & datasets (never push — download/rsync on each cluster)
+# =============================================================================
 data/
 co3d_data.tar.gz
 grid_masked.tar.gz
+# CO3D images under repo-root co3d/ (keep co3d Python package if needed)
+co3d/*/images/
+co3d/*/*/images/
 
-# Generated outputs with images - large
-outputs/grid_masked/
-outputs/masked_frames/
-outputs/degraded_frames/
-outputs/demo/
-outputs/colmap/
-outputs/exp1images/
+# =============================================================================
+# Model weights & checkpoints
+# =============================================================================
+checkpoints/
+interactive_demo/demo_ckpts/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+DUSt3R_*.pth
 
-# Python junk
+# Restormer teacher weights (download via restoration_kd_ysu/setup script)
+inference_rest/Restormer/**/pretrained_models/
+inference_rest/Restormer/**/Datasets/
+
+# =============================================================================
+# Training outputs & experiment artifacts
+# =============================================================================
+outputs/
+finetune_blur_runs/
+logs/
+wandb/
+.gradio/
+
+# =============================================================================
+# Vendored third-party repos (clone separately — see GITHUB_PUSH.md)
+# =============================================================================
+DeblurDiNAT/
+IFAN/
+Uformer/
+
+# =============================================================================
+# Python / editor junk
+# =============================================================================
 __pycache__/
 **/__pycache__/
 *.pyc
 *.pyo
-
-# Virtual environments
+.Python
 venv/
 .venv/
 env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Temp/editor files
+# =============================================================================
+# Temp / OS
+# =============================================================================
 scripts/Untitled
 *.tmp
 .DS_Store
+*~
+project_Hayk_Minasyan$
+
+# Slurm / local scratch patterns
+*.err
+*.out
+!interactive_demo/**/*.out

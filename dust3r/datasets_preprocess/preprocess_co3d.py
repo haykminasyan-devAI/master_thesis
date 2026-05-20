@@ -57,6 +57,22 @@ def get_parser():
 
     parser.add_argument("--img_size", type=int, default=512,
                         help=("lower dimension will be >= img_size * 3/4, and max dimension will be >= img_size"))
+    parser.add_argument(
+        "--fail_on_missing",
+        action="store_true",
+        help="Abort on missing RGB/depth/mask (default: skip missing frames for partial CO3D downloads)",
+    )
+    parser.add_argument(
+        "--selected_sequences_json",
+        type=str,
+        default=None,
+        help=(
+            "Path to a JSON list of sequence names (e.g. raw CO3D <cat>_selected_8.json). "
+            "Only those sequences are kept for this category (no random subsampling). "
+            "Sequences that only exist in the official CO3D test split appear in selected_seqs_test.json; "
+            "prepare_seqlevel_split_10cat8.py merges train+test when building the 8-seq split."
+        ),
+    )
     return parser
 
 
@@ -126,8 +142,19 @@ def get_set_list(category_dir, split, is_single_sequence_subset=False):
     return sequences_all
 
 
-def prepare_sequences(category, co3d_dir, output_dir, img_size, split, min_quality, max_num_sequences_per_object,
-                      seed, is_single_sequence_subset=False):
+def prepare_sequences(
+    category,
+    co3d_dir,
+    output_dir,
+    img_size,
+    split,
+    min_quality,
+    max_num_sequences_per_object,
+    seed,
+    is_single_sequence_subset=False,
+    fail_on_missing=False,
+    restrict_sequence_names=None,
+):
     random.seed(seed)
     category_dir = osp.join(co3d_dir, category)
     category_output_dir = osp.join(output_dir, category)
@@ -149,25 +176,69 @@ def prepare_sequences(category, co3d_dir, output_dir, img_size, split, min_quali
 
     good_quality_sequences = set()
     for seq_data in sequence_data:
-        if seq_data["viewpoint_quality_score"] > min_quality:
+        # Use >= so min_quality=0.0 keeps score==0 (strict > would drop them).
+        if float(seq_data["viewpoint_quality_score"]) >= float(min_quality):
             good_quality_sequences.add(seq_data["sequence_name"])
 
     sequences_numbers = [seq_name for seq_name in sequences_numbers if seq_name in good_quality_sequences]
-    if len(sequences_numbers) < max_num_sequences_per_object:
+    in_split_names = {x for x, _, _ in sequences_all}
+    if restrict_sequence_names is not None:
+        rs = sorted(set(restrict_sequence_names))
+        sequences_numbers = [s for s in sequences_numbers if s in rs]
+        only_other_split = [s for s in rs if s not in in_split_names]
+        if only_other_split:
+            print(
+                f"  [{split}] {category}: {len(only_other_split)} sequence(s) only in the other CO3D split "
+                f"(will appear after merging train+test): {only_other_split[:5]}{'...' if len(only_other_split) > 5 else ''}"
+            )
+        selected_sequences_numbers = sequences_numbers
+    elif len(sequences_numbers) < max_num_sequences_per_object:
         selected_sequences_numbers = sequences_numbers
     else:
         selected_sequences_numbers = random.sample(sequences_numbers, max_num_sequences_per_object)
+
+    if restrict_sequence_names is not None and len(selected_sequences_numbers) == 0:
+        return {}
 
     selected_sequences_numbers_dict = {seq_name: [] for seq_name in selected_sequences_numbers}
     sequences_all = [(seq_name, frame_number, filepath)
                      for seq_name, frame_number, filepath in sequences_all
                      if seq_name in selected_sequences_numbers_dict]
 
+    if not fail_on_missing:
+        kept = []
+        for seq_name, frame_number, filepath in sequences_all:
+            if seq_name not in frame_data_processed or frame_number not in frame_data_processed[seq_name]:
+                continue
+            fd = frame_data_processed[seq_name][frame_number]
+            mask_path = filepath.replace("images", "masks").replace(".jpg", ".png")
+            image_path = os.path.join(co3d_dir, filepath)
+            depth_path = os.path.join(co3d_dir, fd["depth"]["path"])
+            mask_path_full = os.path.join(co3d_dir, mask_path)
+            if (
+                os.path.isfile(image_path)
+                and os.path.isfile(depth_path)
+                and os.path.isfile(mask_path_full)
+            ):
+                kept.append((seq_name, frame_number, filepath))
+        sequences_all = kept
+        if len(sequences_all) == 0:
+            if restrict_sequence_names is not None:
+                return {}
+            raise RuntimeError(
+                f"{category}: no frames left after skipping missing files. "
+                "Rebuild set_lists from local frames or use full CO3D."
+            )
+
     for seq_name, frame_number, filepath in tqdm(sequences_all):
         frame_idx = int(filepath.split('/')[-1][5:-4])
-        selected_sequences_numbers_dict[seq_name].append(frame_idx)
         mask_path = filepath.replace("images", "masks").replace(".jpg", ".png")
-        frame_data = frame_data_processed[seq_name][frame_number]
+        try:
+            frame_data = frame_data_processed[seq_name][frame_number]
+        except KeyError:
+            if fail_on_missing:
+                raise
+            continue
         focal_length = frame_data["viewpoint"]["focal_length"]
         principal_point = frame_data["viewpoint"]["principal_point"]
         image_size = frame_data["image"]["size"]
@@ -178,16 +249,26 @@ def prepare_sequences(category, co3d_dir, output_dir, img_size, split, min_quali
                                                                     np.array(principal_point),
                                                                     np.array(image_size))
 
-        frame_data = frame_data_processed[seq_name][frame_number]
         depth_path = os.path.join(co3d_dir, frame_data["depth"]["path"])
         assert frame_data["depth"]["scale_adjustment"] == 1.0
         image_path = os.path.join(co3d_dir, filepath)
         mask_path_full = os.path.join(co3d_dir, mask_path)
 
-        input_rgb_image = PIL.Image.open(image_path).convert('RGB')
-        input_mask = plt.imread(mask_path_full)
+        try:
+            input_rgb_image = PIL.Image.open(image_path).convert('RGB')
+            input_mask = plt.imread(mask_path_full)
+        except (OSError, FileNotFoundError):
+            if fail_on_missing:
+                raise
+            continue
 
-        with PIL.Image.open(depth_path) as depth_pil:
+        try:
+            depth_pil = PIL.Image.open(depth_path)
+        except (OSError, FileNotFoundError):
+            if fail_on_missing:
+                raise
+            continue
+        with depth_pil:
             # the image is stored with 16-bit depth but PIL reads it as I (32 bit).
             # we cast it to uint16, then reinterpret as float16, then cast to float32
             input_depthmap = (
@@ -237,15 +318,30 @@ def prepare_sequences(category, co3d_dir, output_dir, img_size, split, min_quali
         os.makedirs(os.path.split(save_mask_path)[0], exist_ok=True)
 
         input_rgb_image.save(save_img_path)
-        scaled_depth_map = (input_depthmap / np.max(input_depthmap) * 65535).astype(np.uint16)
+        dmax = float(np.nanmax(input_depthmap))
+        if not np.isfinite(dmax) or dmax <= 0:
+            if fail_on_missing:
+                raise ValueError(f"Invalid depth max for {image_path}")
+            continue
+        scaled_depth_map = (input_depthmap / dmax * 65535).astype(np.uint16)
         cv2.imwrite(save_depth_path, scaled_depth_map)
         cv2.imwrite(save_mask_path, (input_mask * 255).astype(np.uint8))
 
         save_meta_path = save_img_path.replace('jpg', 'npz')
         np.savez(save_meta_path, camera_intrinsics=input_camera_intrinsics,
-                 camera_pose=camera_pose, maximum_depth=np.max(input_depthmap))
+                 camera_pose=camera_pose, maximum_depth=dmax)
 
-    return selected_sequences_numbers_dict
+        selected_sequences_numbers_dict[seq_name].append(frame_idx)
+
+    out = {k: v for k, v in selected_sequences_numbers_dict.items() if len(v) > 0}
+    if not out:
+        if restrict_sequence_names is not None:
+            return {}
+        raise RuntimeError(
+            f"{category}: no sequences with successfully processed frames. "
+            "Check downloads or rebuild set_lists from local frames only."
+        )
+    return out
 
 
 if __name__ == "__main__":
@@ -260,6 +356,15 @@ if __name__ == "__main__":
     else:
         categories = [args.category]
     os.makedirs(args.output_dir, exist_ok=True)
+
+    restrict_list = None
+    if args.selected_sequences_json:
+        if args.category is None:
+            raise ValueError("--selected_sequences_json requires --category (one category per command)")
+        with open(args.selected_sequences_json, "r") as fid:
+            restrict_list = json.load(fid)
+        if not isinstance(restrict_list, list):
+            raise ValueError("--selected_sequences_json must contain a JSON list of sequence name strings")
 
     for split in ['train', 'test']:
         selected_sequences_path = os.path.join(args.output_dir, f'selected_seqs_{split}.json')
@@ -285,7 +390,9 @@ if __name__ == "__main__":
                     min_quality=args.min_quality,
                     max_num_sequences_per_object=args.num_sequences_per_object,
                     seed=args.seed + CATEGORIES_IDX[category],
-                    is_single_sequence_subset=args.single_sequence_subset
+                    is_single_sequence_subset=args.single_sequence_subset,
+                    fail_on_missing=args.fail_on_missing,
+                    restrict_sequence_names=restrict_list,
                 )
                 with open(category_selected_sequences_path, 'w') as file:
                     json.dump(category_selected_sequences, file)

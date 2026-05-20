@@ -41,12 +41,40 @@ def loss_of_one_batch(batch, model, criterion, device, symmetrize_batch=False, u
     if symmetrize_batch:
         view1, view2 = make_batch_symmetric(batch)
 
-    with torch.cuda.amp.autocast(enabled=bool(use_amp)):
+    # Prefer bfloat16 autocast when supported — fewer overflow NaNs than float16 AMP.
+    if use_amp and torch.cuda.is_bf16_supported():
+        amp_ctx = torch.amp.autocast('cuda', dtype=torch.bfloat16)
+    elif use_amp:
+        amp_ctx = torch.cuda.amp.autocast(enabled=True)
+    else:
+        amp_ctx = None
+
+    if amp_ctx is not None:
+        with amp_ctx:
+            pred1, pred2 = model(view1, view2)
+    else:
         pred1, pred2 = model(view1, view2)
 
-        # loss is supposed to be symmetric
-        with torch.cuda.amp.autocast(enabled=False):
-            loss = criterion(view1, view2, pred1, pred2) if criterion is not None else None
+    # Preserve optional restoration tensors in case criterion mutates view dicts.
+    preserved = {
+        'view1_img_clean': view1.get('img_clean'),
+        'view2_img_clean': view2.get('img_clean'),
+        'view1_img_restored': view1.get('img_restored'),
+        'view2_img_restored': view2.get('img_restored'),
+    }
+
+    # Loss in full precision (same as upstream DUSt3R training).
+    with torch.cuda.amp.autocast(enabled=False):
+        loss = criterion(view1, view2, pred1, pred2) if criterion is not None else None
+
+    if preserved['view1_img_clean'] is not None and 'img_clean' not in view1:
+        view1['img_clean'] = preserved['view1_img_clean']
+    if preserved['view2_img_clean'] is not None and 'img_clean' not in view2:
+        view2['img_clean'] = preserved['view2_img_clean']
+    if preserved['view1_img_restored'] is not None and 'img_restored' not in view1:
+        view1['img_restored'] = preserved['view1_img_restored']
+    if preserved['view2_img_restored'] is not None and 'img_restored' not in view2:
+        view2['img_restored'] = preserved['view2_img_restored']
 
     result = dict(view1=view1, view2=view2, pred1=pred1, pred2=pred2, loss=loss)
     return result[ret] if ret else result

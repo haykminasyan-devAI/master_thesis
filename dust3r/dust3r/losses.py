@@ -225,9 +225,11 @@ class ConfLoss (MultiLoss):
         if loss2.numel() == 0:
             print('NO VALID POINTS in img2', force=True)
 
-        # weight by confidence
-        conf1, log_conf1 = self.get_conf_log(pred1['conf'][msk1])
-        conf2, log_conf2 = self.get_conf_log(pred2['conf'][msk2])
+        # weight by confidence (clamp before log — tiny/negative conf → NaN in fp16/fp32)
+        conf1 = pred1['conf'][msk1].clamp(min=1e-6)
+        conf2 = pred2['conf'][msk2].clamp(min=1e-6)
+        log_conf1 = torch.log(conf1)
+        log_conf2 = torch.log(conf2)
         conf_loss1 = loss1 * conf1 - self.alpha * log_conf1
         conf_loss2 = loss2 * conf2 - self.alpha * log_conf2
 

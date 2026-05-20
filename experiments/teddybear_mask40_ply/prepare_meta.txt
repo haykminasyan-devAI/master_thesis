@@ -1,0 +1,25 @@
+images_dir: data/co3d/teddybear/101_11758_21048/images
+out_dir: /home/asds/project_Hayk_Minasyan/experiments/teddybear_mask40_ply/masked_images
+n_frames: 15
+mask_ratio: 0.4
+seed: 42
+long_edge: 512
+patch_size: 16
+square_ok: False
+mask_npy_dir: /home/asds/project_Hayk_Minasyan/experiments/teddybear_mask40_ply/masked_images_patch_masks
+frames:
+  frame000001.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000015.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000029.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000044.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000058.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000072.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000087.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000101.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000115.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000130.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000144.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000158.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000173.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000187.jpg  cropped=288x512  grid=18x32  patches=576
+  frame000202.jpg  cropped=288x512  grid=18x32  patches=576

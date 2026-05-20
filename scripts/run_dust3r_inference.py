@@ -18,6 +18,17 @@ Usage (masking experiment — 5 of 10 frames masked at 25%):
         --masked_dir   outputs/masked_frames/teddybear/101_11758_21048/mask_25pct \
         --mask_ratio   0.25 \
         --output_dir   outputs/dust3r/teddybear_masked5_25pct
+
+Usage (patch attention-key mask — same pixels as clean; random patches blocked as attn keys):
+    python scripts/patch_attn_mask_exp/generate_patch_attn_masks.py \
+        --images_dir data/co3d/teddybear/101_11758_21048/images \
+        --output_dir outputs/patch_attn_masks/teddybear/101_11758_21048/mask_25pct \
+        --mask_ratio 0.25 --seed 42
+    python scripts/run_dust3r_inference.py \
+        --sequence_dir data/co3d/teddybear/101_11758_21048 \
+        --dust3r_dir dust3r --n_frames 10 --n_masked 0 \
+        --attn_mask_npy_dir outputs/patch_attn_masks/teddybear/101_11758_21048/mask_25pct \
+        --mask_ratio 0.25 --output_dir outputs/dust3r/teddybear_patch_attn25
 """
 
 import os
@@ -216,6 +227,24 @@ def main():
     # ── model parameters ──────────────────────────────────────────────────────
     parser.add_argument("--min_conf_thr", type=float, default=3.0,
                         help="Confidence threshold for point filtering (default: 3.0)")
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default="naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt",
+        help="DUSt3R checkpoint path or HuggingFace model id",
+    )
+    parser.add_argument(
+        "--image_size",
+        type=int,
+        default=512,
+        help="Input resolution for DUSt3R image loader (e.g. 224 or 512)",
+    )
+    parser.add_argument(
+        "--attn_mask_npy_dir",
+        default=None,
+        help="If set, load <basename>.patch_mask_hw.npy per frame (bool [nh,nw], True=masked) "
+             "and block those patches as attention *keys* in encoder self-attn and decoder cross-attn.",
+    )
     args = parser.parse_args()
 
     if args.n_masked > 0 and args.masked_dir is None:
@@ -228,13 +257,16 @@ def main():
     from dust3r.image_pairs import make_pairs
     from dust3r.utils.image import load_images
     from dust3r.utils.device import to_numpy
+    from dust3r.utils.patch_attn_mask import attach_attn_key_padding_from_hw_mask
     from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     # ── load model ─────────────────────────────────────────────────────────────
     print("Loading DUSt3R model ...")
-    model = AsymmetricCroCo3DStereo.from_pretrained("naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt")
+    print(f"  model_path : {args.model_path}")
+    print(f"  image_size : {args.image_size}")
+    model = AsymmetricCroCo3DStereo.from_pretrained(args.model_path)
     model = model.to(args.device).eval()
     print("Model loaded.")
 
@@ -251,7 +283,16 @@ def main():
 
     # ── run DUSt3R inference ───────────────────────────────────────────────────
     print("\nRunning DUSt3R inference ...")
-    imgs = load_images(frame_paths, size=512)
+    imgs = load_images(frame_paths, size=args.image_size)
+    if args.attn_mask_npy_dir:
+        for j, im in enumerate(imgs):
+            fname = os.path.basename(frame_paths[j])
+            npy_path = os.path.join(args.attn_mask_npy_dir, f"{fname}.patch_mask_hw.npy")
+            if os.path.isfile(npy_path):
+                m = np.load(npy_path)
+                attach_attn_key_padding_from_hw_mask(im, m, model)
+                print(f"  attn key mask: {fname} ({m.sum()} masked patches)")
+        print("Attention key-padding masks enabled (masked patches cannot be attended to as keys).")
     pairs = make_pairs(imgs, scene_graph="complete", prefilter=None, symmetrize=True)
     output = inference(pairs, model, args.device, batch_size=1)
 
@@ -326,6 +367,7 @@ def main():
         f.write(f"n_masked:          {args.n_masked}\n")
         f.write(f"n_clean:           {args.n_frames - args.n_masked}\n")
         f.write(f"mask_ratio:        {args.mask_ratio}\n")
+        f.write(f"attn_mask_npy_dir: {args.attn_mask_npy_dir}\n")
         f.write(f"n_pred_points:     {metrics['n_pred_points']}\n")
         f.write(f"n_gt_points:       {metrics['n_gt_points']}\n")
         f.write(f"chamfer_distance:  {metrics['chamfer_distance']:.8f}\n")

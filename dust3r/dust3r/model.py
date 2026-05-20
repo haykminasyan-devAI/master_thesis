@@ -125,7 +125,7 @@ class AsymmetricCroCo3DStereo (
         self.head1 = transpose_to_landscape(self.downstream_head1, activate=landscape_only)
         self.head2 = transpose_to_landscape(self.downstream_head2, activate=landscape_only)
 
-    def _encode_image(self, image, true_shape):
+    def _encode_image(self, image, true_shape, key_padding_mask=None):
         # embed the image into patches  (x has size B x Npatches x C)
         x, pos = self.patch_embed(image, true_shape=true_shape)
 
@@ -134,20 +134,35 @@ class AsymmetricCroCo3DStereo (
 
         # now apply the transformer encoder and normalization
         for blk in self.enc_blocks:
-            x = blk(x, pos)
+            x = blk(x, pos, key_padding_mask=key_padding_mask)
 
         x = self.enc_norm(x)
         return x, pos, None
 
-    def _encode_image_pairs(self, img1, img2, true_shape1, true_shape2):
+    def _encode_image_pairs(self, img1, img2, true_shape1, true_shape2,
+                            key_pad1=None, key_pad2=None):
         if img1.shape[-2:] == img2.shape[-2:]:
+            km = None
+            if key_pad1 is not None or key_pad2 is not None:
+                if key_pad1 is None:
+                    key_pad1 = torch.zeros(
+                        (img1.shape[0], key_pad2.shape[1]),
+                        dtype=torch.bool, device=img1.device,
+                    )
+                if key_pad2 is None:
+                    key_pad2 = torch.zeros(
+                        (img2.shape[0], key_pad1.shape[1]),
+                        dtype=torch.bool, device=img2.device,
+                    )
+                km = torch.cat((key_pad1, key_pad2), dim=0)
             out, pos, _ = self._encode_image(torch.cat((img1, img2), dim=0),
-                                             torch.cat((true_shape1, true_shape2), dim=0))
+                                             torch.cat((true_shape1, true_shape2), dim=0),
+                                             key_padding_mask=km)
             out, out2 = out.chunk(2, dim=0)
             pos, pos2 = pos.chunk(2, dim=0)
         else:
-            out, pos, _ = self._encode_image(img1, true_shape1)
-            out2, pos2, _ = self._encode_image(img2, true_shape2)
+            out, pos, _ = self._encode_image(img1, true_shape1, key_padding_mask=key_pad1)
+            out2, pos2, _ = self._encode_image(img2, true_shape2, key_padding_mask=key_pad2)
         return out, out2, pos, pos2
 
     def _encode_symmetrized(self, view1, view2):
@@ -159,17 +174,32 @@ class AsymmetricCroCo3DStereo (
         shape2 = view2.get('true_shape', torch.tensor(img2.shape[-2:])[None].repeat(B, 1))
         # warning! maybe the images have different portrait/landscape orientations
 
+        kpm1 = view1.get('attn_key_padding_mask')
+        kpm2 = view2.get('attn_key_padding_mask')
+        if kpm1 is not None:
+            kpm1 = kpm1.to(device=img1.device, dtype=torch.bool)
+        if kpm2 is not None:
+            kpm2 = kpm2.to(device=img2.device, dtype=torch.bool)
+
         if is_symmetrized(view1, view2):
             # computing half of forward pass!'
-            feat1, feat2, pos1, pos2 = self._encode_image_pairs(img1[::2], img2[::2], shape1[::2], shape2[::2])
+            km1 = kpm1[::2] if kpm1 is not None else None
+            km2 = kpm2[::2] if kpm2 is not None else None
+            feat1, feat2, pos1, pos2 = self._encode_image_pairs(
+                img1[::2], img2[::2], shape1[::2], shape2[::2], km1, km2)
             feat1, feat2 = interleave(feat1, feat2)
             pos1, pos2 = interleave(pos1, pos2)
+            if kpm1 is not None and kpm2 is not None:
+                kpm1, kpm2 = interleave(km1, km2)
+            else:
+                kpm1, kpm2 = None, None
         else:
-            feat1, feat2, pos1, pos2 = self._encode_image_pairs(img1, img2, shape1, shape2)
+            feat1, feat2, pos1, pos2 = self._encode_image_pairs(
+                img1, img2, shape1, shape2, kpm1, kpm2)
 
-        return (shape1, shape2), (feat1, feat2), (pos1, pos2)
+        return (shape1, shape2), (feat1, feat2), (pos1, pos2), (kpm1, kpm2)
 
-    def _decoder(self, f1, pos1, f2, pos2):
+    def _decoder(self, f1, pos1, f2, pos2, key_pad1=None, key_pad2=None):
         final_output = [(f1, f2)]  # before projection
 
         # project to decoder dim
@@ -178,10 +208,16 @@ class AsymmetricCroCo3DStereo (
 
         final_output.append((f1, f2))
         for blk1, blk2 in zip(self.dec_blocks, self.dec_blocks2):
-            # img1 side
-            f1, _ = blk1(*final_output[-1][::+1], pos1, pos2)
-            # img2 side
-            f2, _ = blk2(*final_output[-1][::-1], pos2, pos1)
+            # img1 side: self-attn masks view1 keys; cross-attn masks view2 keys (memory)
+            f1, _ = blk1(
+                *final_output[-1][::+1], pos1, pos2,
+                x_key_padding_mask=key_pad1, y_key_padding_mask=key_pad2,
+            )
+            # img2 side: symmetric
+            f2, _ = blk2(
+                *final_output[-1][::-1], pos2, pos1,
+                x_key_padding_mask=key_pad2, y_key_padding_mask=key_pad1,
+            )
             # store the result
             final_output.append((f1, f2))
 
@@ -198,10 +234,10 @@ class AsymmetricCroCo3DStereo (
 
     def forward(self, view1, view2):
         # encode the two images --> B,S,D
-        (shape1, shape2), (feat1, feat2), (pos1, pos2) = self._encode_symmetrized(view1, view2)
+        (shape1, shape2), (feat1, feat2), (pos1, pos2), (kpm1, kpm2) = self._encode_symmetrized(view1, view2)
 
         # combine all ref images into object-centric representation
-        dec1, dec2 = self._decoder(feat1, pos1, feat2, pos2)
+        dec1, dec2 = self._decoder(feat1, pos1, feat2, pos2, key_pad1=kpm1, key_pad2=kpm2)
 
         with torch.cuda.amp.autocast(enabled=False):
             res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)

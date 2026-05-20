@@ -18,20 +18,48 @@ from dust3r.datasets.base.base_stereo_view_dataset import BaseStereoViewDataset
 from dust3r.utils.image import imread_cv2
 
 
+def _co3d_category_key_norm(name):
+    """Match JSON category keys to CLI names: ignore case, spaces, underscores, hyphens."""
+    s = str(name).strip().lower()
+    for ch in (" ", "_", "-"):
+        s = s.replace(ch, "")
+    return s
+
+
 class Co3d(BaseStereoViewDataset):
-    def __init__(self, mask_bg=True, *args, ROOT, **kwargs):
+    def __init__(self, mask_bg=True, *args, ROOT, categories=None, **kwargs):
         self.ROOT = ROOT
         super().__init__(*args, **kwargs)
         assert mask_bg in (True, False, 'rand')
         self.mask_bg = mask_bg
         self.dataset_label = 'Co3d_v2'
 
-        # load all scenes
-        with open(osp.join(self.ROOT, f'selected_seqs_{self.split}.json'), 'r') as f:
-            self.scenes = json.load(f)
-            self.scenes = {k: v for k, v in self.scenes.items() if len(v) > 0}
-            self.scenes = {(k, k2): v2 for k, v in self.scenes.items()
-                           for k2, v2 in v.items()}
+        split_path = osp.join(self.ROOT, f'selected_seqs_{self.split}.json')
+        with open(split_path, 'r') as f:
+            nested = json.load(f)
+        # category -> {seq_id: frame_indices}; skip empty or non-dict leaves
+        nested = {
+            k: v for k, v in nested.items()
+            if isinstance(v, dict) and len(v) > 0
+        }
+
+        if categories is not None:
+            allowed = {_co3d_category_key_norm(c) for c in categories}
+            filtered = {
+                k: v for k, v in nested.items()
+                if _co3d_category_key_norm(k) in allowed
+            }
+            if not filtered:
+                avail = sorted(nested.keys(), key=str)
+                raise RuntimeError(
+                    f"Co3d: no scenes left after categories={categories!r}. "
+                    f"Compare to top-level keys in {split_path}: {avail}"
+                )
+            nested = filtered
+
+        self.scenes = {
+            (k, k2): v2 for k, v in nested.items() for k2, v2 in v.items()
+        }
         self.scene_list = list(self.scenes.keys())
 
         # for each scene, we have 100 images ==> 360 degrees (so 25 frames ~= 90 degrees)
@@ -61,6 +89,10 @@ class Co3d(BaseStereoViewDataset):
         depthmap = imread_cv2(depthpath, cv2.IMREAD_UNCHANGED)
         depthmap = (depthmap.astype(np.float32) / 65535) * np.nan_to_num(input_metadata['maximum_depth'])
         return depthmap
+
+    def _align_rgb_depth_if_needed(self, rgb_image, depthmap):
+        """Override when RGB and depth may differ in H×W (must match before crop/resize)."""
+        return rgb_image, depthmap
 
     def _get_views(self, idx, resolution, rng):
         # choose a scene
@@ -106,6 +138,7 @@ class Co3d(BaseStereoViewDataset):
             # load image and depth
             rgb_image = imread_cv2(impath)
             depthmap = self._read_depthmap(depthpath, input_metadata)
+            rgb_image, depthmap = self._align_rgb_depth_if_needed(rgb_image, depthmap)
 
             if mask_bg:
                 # load object mask

@@ -98,10 +98,13 @@ class BaseStereoViewDataset (EasyDataset):
             assert 'pts3d' not in view
             assert 'valid_mask' not in view
             assert np.isfinite(view['depthmap']).all(), f'NaN in depthmap for view {view_name(view)}'
+            # Coerce to float32: some loaders / numpy ops yield float64; downstream expects float32.
+            # Do not pass copy=False: NumPy 2 may require a copy when narrowing dtype.
+            view['depthmap'] = np.asarray(view['depthmap'], dtype=np.float32)
             pts3d, valid_mask = depthmap_to_absolute_camera_coordinates(**view)
 
-            view['pts3d'] = pts3d
-            view['valid_mask'] = valid_mask & np.isfinite(pts3d).all(axis=-1)
+            view['pts3d'] = np.asarray(pts3d, dtype=np.float32)
+            view['valid_mask'] = valid_mask & np.isfinite(view['pts3d']).all(axis=-1)
 
             # check all datatypes
             for key, val in view.items():
