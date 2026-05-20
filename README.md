@@ -3,6 +3,7 @@
 Master thesis research code: improving **DUSt3R** point-cloud quality when input views are **motion-blurred, defocus-blurred, or Gaussian-blurred**, using lightweight front-ends, knowledge distillation, and joint finetuning—without redesigning the full DUSt3R backbone.
 
 **Author:** Hayk Minasyan (`haykminasyan-devAI`)  
+**Thesis:** [Master thesis (PDF)](<master_thesis (LinkedIn).pdf>) — full write-up (methods, experiments, results)  
 **Base model:** [DUSt3R](https://github.com/naver/dust3r) (ViT-L, 512 DPT and/or 224 linear checkpoints)  
 **Dataset:** CO3D multi-category object-centric sequences
 
@@ -112,9 +113,17 @@ Upload frames from `outputs/viz_selections/` (clean, `blur_s10`, `motion_k25`, e
 
 ---
 
+## Thesis document
+
+The complete master thesis is included in this repository:
+
+**[master_thesis (LinkedIn).pdf](<master_thesis (LinkedIn).pdf>)** (~2.2 MB)
+
+It complements this README and the experiment code (training scripts, evaluation, demo).
+
+---
+
 ## Acknowledgments & references
-
-
 
 | Component | Reference |
 |-----------|-----------|
