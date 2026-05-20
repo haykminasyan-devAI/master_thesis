@@ -112,15 +112,28 @@ Upload frames from `outputs/viz_selections/` (clean, `blur_s10`, `motion_k25`, e
 
 ---
 
-## Citation
+## Acknowledgments & references
 
-If you use DUSt3R, please cite the original paper and checkpoint license terms from [Naver Labs DUSt3R](https://github.com/naver/dust3r). DeblurDiNAT, Restormer, and other third-party modules have their own licenses in the respective repositories.
+
+
+| Component | Reference |
+|-----------|-----------|
+| **DUSt3R** | Wang et al., *DUSt3R: Geometric 3D Vision Made Easy* — [GitHub](https://github.com/naver/dust3r), [project page](https://dust3r.europe.naverlabs.com/) |
+| **DeblurDiNAT** | DeblurDiNAT / DiNAT deblurring backbone — see the [DeblurDiNAT](https://github.com/ZZCWD/DeblurDiNAT) repository and paper |
+| **Restormer** | Zamir et al., *Restormer: Efficient Transformer for High-Resolution Image Restoration* — used as frozen teacher in KD experiments |
+
+
 
 ---
 
-## License & data
+## Data
 
-- **Code in this repo:** research / thesis use; follow licenses of bundled dependencies.
-- **CO3D:** subject to the CO3D dataset license; do not redistribute downloaded frames via this repository.
+- **CO3D** frames and point clouds are **not** included in this repository.
+- Download CO3D from the [official release](https://ai.facebook.com/datasets/co3d/) and comply with the dataset license.
+- Synthetic blur variants for experiments are generated locally (see `scripts/gaussian_noise_and_blur_exps/` and training configs).
 
-For push instructions and large-file exclusions, see **[GITHUB_PUSH.md](GITHUB_PUSH.md)**.
+---
+
+## License
+
+Research code released for **academic / thesis** purposes. Third-party code (`dust3r/`, DeblurDiNAT, Restormer, etc.) remains under the licenses of the respective authors. 
